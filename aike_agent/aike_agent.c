@@ -6,8 +6,9 @@
 #include <gui/view_dispatcher.h>
 #include <furi_hal.h>
 #include <furi_hal_bt.h>
-#include <ble/ble.h>
-#include <gap.h>
+// #include <ble/ble.h> // Removed to fix fatal error
+// #include <gap.h> // GAP definitions usually provided by HAL or glue in Custom FW.
+// If gap.h is missing in standard SDK, it's expected. We rely on the environment having it or using HAL.
 
 #define TAG "AikeAgent"
 
