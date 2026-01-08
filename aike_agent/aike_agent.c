@@ -1,5 +1,5 @@
 #include "aike_agent.h"
-// #include "aike_agent_stubs.h" // Removed to avoid conflict with Momentum SDK
+#include "aike_agent_stubs.h" // Includes stubs if definitions are missing
 #include "sha1.h"
 #include <furi.h>
 #include <gui/gui.h>
@@ -163,8 +163,8 @@ static bool aike_agent_gap_scan_callback(GapEvent event, GapEventData* data, voi
             }
 
             if(!exists && app->device_count < 10) {
-                strncpy(app->device_names[app->device_count], name, 31);
-                strncpy(app->device_macs[app->device_count], mac_str, 17);
+                strlcpy(app->device_names[app->device_count], name, sizeof(app->device_names[0]));
+                strlcpy(app->device_macs[app->device_count], mac_str, sizeof(app->device_macs[0]));
                 app->device_count++;
 
                 // Notify main thread
@@ -266,7 +266,6 @@ static void aike_agent_control_callback(void* context, AikeCommand command) {
 }
 
 static void aike_agent_connect(AikeAgentApp* app, const char* mac_address) {
-    UNUSED(app);
     // Convert string MAC to bytes for BD_ADDR
     uint8_t addr_bytes[6];
     int values[6];
@@ -276,35 +275,32 @@ static void aike_agent_connect(AikeAgentApp* app, const char* mac_address) {
         for(int i = 0; i < 6; ++i) addr_bytes[i] = (uint8_t)values[i];
     }
 
-    // Note: To properly connect, we need the address type. Assuming Public or Random.
-    // Momentum SDK: ble_gap_connect(const bd_addr_t* peer_addr);
-    // For this scaffold, we invoke the mock.
+    // Populate struct for Momentum/Custom SDK
+    bd_addr_t addr;
+    memcpy(addr.addr, addr_bytes, 6);
+    addr.type = 0; // BD_ADDR_TYPE_LE_PUBLIC assumed. In reality we should check type from scan result.
 
-    // This part requires specific BD_ADDR struct from custom FW which we stubbed simply.
-    // In real custom FW, you would populate bd_addr_t
-    // bd_addr_t addr;
-    // memcpy(addr.addr, addr_bytes, 6);
-    // addr.type = BD_ADDR_TYPE_LE_PUBLIC; // Simplified assumption
-    // ble_gap_connect(&addr);
+    // Trigger connection (Stubbed in standard FW, Active in Momentum)
+    ble_gap_connect(&addr);
 
     FURI_LOG_I(TAG, "Connecting to %s", mac_address);
-    // Simulate auth for this prototype since we can't really connect in this environment
+
+    // For simulation/stubbing purposes in non-connected environment, we proceed to auth
+    // In real app, you would wait for GapEventConnected.
     aike_agent_authenticate(app);
 }
 
 static void aike_agent_authenticate(AikeAgentApp* app) {
     UNUSED(app);
-    // In real app, this is called after Service Discovery finding the characteristics handles.
-    // Here we document the flow fully for the Momentum developer.
-
     FURI_LOG_I(TAG, "Authenticating...");
 
-    // 1. Read Challenge
-    // ble_gatt_client_read_value(app->conn_handle, app->handle_challenge);
+    // 1. Read Challenge (Active call)
+    // In real flow: wait for callback/event with value.
+    ble_gatt_client_read_value(0, 0x0010); // Dummy handles for stub
 
-    // 2. Compute SHA1 (Simulated here)
+    // 2. Compute SHA1 (Simulated here with dummy challenge)
     uint8_t challenge[20];
-    memset(challenge, 0xAB, 20); // Dummy challenge
+    memset(challenge, 0xAB, 20);
 
     SHA1_CTX ctx;
     SHA1Init(&ctx);
@@ -313,8 +309,8 @@ static void aike_agent_authenticate(AikeAgentApp* app) {
     uint8_t response[20];
     SHA1Final(response, &ctx);
 
-    // 3. Write Response
-    // ble_gatt_client_write_value(app->conn_handle, app->handle_response, response, 20);
+    // 3. Write Response (Active call)
+    ble_gatt_client_write_value(0, 0x0011, response, 20); // Dummy handle
 
     FURI_LOG_I(TAG, "Auth Complete (Simulated)");
     aike_control_view_set_status(app->control_view, "Connected & Auth");
@@ -322,7 +318,8 @@ static void aike_agent_authenticate(AikeAgentApp* app) {
 
 static void aike_agent_send_command(AikeAgentApp* app, const uint8_t* command, uint8_t len) {
     UNUSED(app);
-    // ble_gatt_client_write_value(app->conn_handle, app->handle_command, command, len);
+    // Active call for Momentum
+    ble_gatt_client_write_value(0, 0x0012, command, len); // Dummy handle
     FURI_LOG_I(TAG, "Command sent (len %d)", len);
 }
 
