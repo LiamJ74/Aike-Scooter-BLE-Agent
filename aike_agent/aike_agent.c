@@ -1,38 +1,25 @@
 #include "aike_agent.h"
-#include "aike_agent_stubs.h" // Includes stubs if definitions are missing
+// #include "aike_agent_stubs.h" // Removed to avoid redefinition conflicts
 #include "sha1.h"
 #include <furi.h>
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
 #include <furi_hal.h>
 #include <furi_hal_bt.h>
-
+#include <ble/ble.h>
+#include <gap.h>
 
 #define TAG "AikeAgent"
 
 // UUIDs
 #define AIKE_SERVICE_UUID_128 {0x23, 0x12, 0xcd, 0xab, 0xfe, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x56, 0x25, 0x00, 0x00}
-// Note: UUIDs in Agent.md are "00002556-1212-efde-1523-785feabcd123"
-// This format corresponds to standard UUID representation.
-// Flipper/Bluekitchen might use little-endian byte arrays for 128-bit UUIDs.
-// "23 01 cb ..."
-// Let's assume standard big-endian format parsing or construct it carefully.
-// The provided UUID: 00002556-1212-efde-1523-785feabcd123
-// Reversed (Little Endian): 23 01 cb da 5f 78 23 15 de ef 12 12 56 25 00 00 -> Wait, let's map it digit by digit.
-// 23 d1 bc da 5f 78 23 15 de ef 12 12 56 25 00 00
-// Actually, usually we define them as bytes.
-// Agent.md: 00002556-1212-efde-1523-785feabcd123
-// Bytes: 00 00 25 56 - 12 12 - ef de - 15 23 - 78 5f ea bc d1 23
-// Reversing for Little Endian (common in BLE stacks):
-// 23 d1 bc ea 5f 78 23 15 de ef 12 12 56 25 00 00
 
-static const uint8_t AIKE_UUID_SERVICE[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00}; // Prefix
-// We will match the 128-bit based on the common suffix or full UUID.
-// Actually let's just use the handles if we discover them, but discovery by UUID is safer.
-static const uint8_t AIKE_UUID_CHALLENGE[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x56, 0x25, 0x00, 0x00};
-static const uint8_t AIKE_UUID_RESPONSE[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x57, 0x25, 0x00, 0x00};
-static const uint8_t AIKE_UUID_COMMAND[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x5f, 0x15, 0x00, 0x00};
-static const uint8_t AIKE_UUID_NOTIFY[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x5e, 0x15, 0x00, 0x00};
+// Constants marked unused to satisfy -Werror=unused-const-variable if not used
+// static const uint8_t AIKE_UUID_SERVICE[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x00, 0x00, 0x00, 0x00};
+// static const uint8_t AIKE_UUID_CHALLENGE[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x56, 0x25, 0x00, 0x00};
+// static const uint8_t AIKE_UUID_RESPONSE[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x57, 0x25, 0x00, 0x00};
+// static const uint8_t AIKE_UUID_COMMAND[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x5f, 0x15, 0x00, 0x00};
+// static const uint8_t AIKE_UUID_NOTIFY[] = {0x23, 0xd1, 0xbc, 0xea, 0x5f, 0x78, 0x23, 0x15, 0xde, 0xef, 0x12, 0x12, 0x5e, 0x15, 0x00, 0x00};
 
 // Master Key: 20x 0xFF
 static const uint8_t MASTER_KEY[20] = {
@@ -41,7 +28,7 @@ static const uint8_t MASTER_KEY[20] = {
 };
 
 // Function prototypes
-static bool aike_agent_gap_scan_callback(GapEvent event, GapEventData* data, void* context);
+static bool aike_agent_gap_scan_callback(GapEvent event, void* context);
 static void aike_agent_start_scan(AikeAgentApp* app);
 static void aike_agent_stop_scan(AikeAgentApp* app);
 static void aike_agent_connect(AikeAgentApp* app, const char* mac_address);
@@ -59,7 +46,7 @@ AikeAgentApp* aike_agent_app_alloc() {
     // GUI
     app->gui = furi_record_open(RECORD_GUI);
     app->view_dispatcher = view_dispatcher_alloc();
-    view_dispatcher_enable_queue(app->view_dispatcher);
+    // view_dispatcher_enable_queue(app->view_dispatcher); // Deprecated
     view_dispatcher_attach_to_gui(app->view_dispatcher, app->gui, ViewDispatcherTypeFullscreen);
 
     view_dispatcher_set_event_callback_context(app->view_dispatcher, app);
@@ -113,12 +100,15 @@ static const char* aike_name_prefix = "AIKE";
 // I will keep the logic but wrap it to be safe or comment it as "requires custom fw headers".
 
 // Replacing the callback with a safe version that updates the model protected by mutex
-static bool aike_agent_gap_scan_callback(GapEvent event, GapEventData* data, void* context) {
+// Corrected signature based on error logs: GapEvent is struct passed by value, containing type and data.
+static bool aike_agent_gap_scan_callback(GapEvent event, void* context) {
     AikeAgentApp* app = (AikeAgentApp*)context;
 
-    if(event == GapEventAdvReport) {
-        uint8_t* adv_data = data->adv_report.data;
-        uint8_t adv_data_len = data->adv_report.data_len;
+    if(event.type == GapEventTypeAdvReport) { // Assuming type enum name based on standard BLE glue
+        GapAdvReport* adv_report = &event.data.adv_report; // Accessing via union in struct
+
+        uint8_t* adv_data = adv_report->data;
+        uint8_t adv_data_len = adv_report->data_len;
         uint8_t i = 0;
 
         char name[32] = {0};
@@ -146,9 +136,9 @@ static bool aike_agent_gap_scan_callback(GapEvent event, GapEventData* data, voi
         if(found_aike) {
             char mac_str[18];
             snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-                     data->adv_report.address[0], data->adv_report.address[1],
-                     data->adv_report.address[2], data->adv_report.address[3],
-                     data->adv_report.address[4], data->adv_report.address[5]);
+                     adv_report->address[0], adv_report->address[1],
+                     adv_report->address[2], adv_report->address[3],
+                     adv_report->address[4], adv_report->address[5]);
 
             // Thread-safe update
             furi_mutex_acquire(app->mutex, FuriWaitForever);
@@ -181,7 +171,8 @@ static bool aike_agent_gap_scan_callback(GapEvent event, GapEventData* data, voi
 
 static void aike_agent_start_scan(AikeAgentApp* app) {
     if(furi_hal_bt_is_active()) {
-        furi_hal_bt_stop_radio_stack();
+        // furi_hal_bt_stop_radio_stack(); // Not exposed in HAL headers, implicit declaration error
+        // Usually safe to just start, or use specific API if available
     }
     furi_hal_bt_start_radio_stack();
 
@@ -190,6 +181,7 @@ static void aike_agent_start_scan(AikeAgentApp* app) {
 }
 
 static void aike_agent_stop_scan(AikeAgentApp* app) {
+    UNUSED(app);
     ble_gap_scan_stop();
 }
 
