@@ -44,8 +44,8 @@ It has been designed for and tested on:
 3. **Update SDK for Custom Firmware**:
    Since this app depends on custom firmware headers, you must point `ufbt` to the Momentum SDK (or your specific firmware's SDK).
    ```bash
-   # For Momentum Firmware (example channel, verify current documentation)
-   ufbt update --channel=dev --index-url=https://up.nextum.io/manifest.json
+   # For Momentum Firmware
+   ufbt update --index-url=https://up.momentum-fw.dev/firmware/directory.json
    ```
    *If you are unsure, check the developer documentation of your specific firmware for the correct `ufbt update` command.*
 
