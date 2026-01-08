@@ -4,9 +4,31 @@
 Créer une application .fap pour Flipper Zero permettant de contrôler les scooters Äike (post-faillite 2025) via BLE en exploitant la clé maître fixe (20×0xFF).
 
 **Statut actuel** (janvier 2026)  
-- Pas d'application publique connue  
-- Protocole connu et très simple  
-- Faisable avec custom firmware + uFBT
+- Application fonctionnelle structurellement (Scan, Auth, Commandes).
+- Compatible uniquement avec les firmwares personnalisés (Momentum, RogueMaster, Unleashed) exposant l'API BLE Central.
+
+## Rapport de Développement
+
+### Fonctionnalités Implémentées
+1.  **Scan BLE** : Filtrage des devices commençant par "AIKE".
+2.  **Authentification** : Implémentation complète du handshake SHA1 (Challenge-Response) avec la clé maître `FFFF...`.
+3.  **Commandes** : Unlock, Lock, Eco Mode, Battery Hatch.
+4.  **Interface** : Menu Flipper standard avec gestion de navigation.
+
+### Problèmes Rencontrés & Solutions
+1.  **Conflits de Headers (GAP)** : Le SDK Momentum possède des définitions pour `GapEvent` qui entraient en conflit avec les stubs nécessaires pour la compilation locale.
+    *   *Solution* : Utilisation de "Shadow Types" (`AikeGapEvent`) et de callbacks `void*` pour contourner la vérification de type stricte tout en accédant à la mémoire.
+2.  **Assets Corrompus** : L'icône téléchargée initialement était corrompue (404).
+    *   *Solution* : Génération d'une icône valide binaire via Python.
+3.  **Callback Type Safety** : Le passage de pointeurs de chaînes dans les callbacks UI était instable.
+    *   *Solution* : Passage par index entier et lookup sécurisé par Mutex.
+
+### État "Stubbed" vs "Active"
+Le code est configuré pour compiler sur un environnement standard (via stubs) mais pour s'exécuter sur Momentum. Les appels `ble_gap_scan_start`, `ble_gap_connect`, etc. sont actifs mais dépendent de la présence des symboles au linkage dans le firmware cible.
+
+### Reste à faire (Post-Merge)
+- Vérifier sur le matériel réel si l'alignement mémoire de `AikeGapEvent` correspond parfaitement à `GapEvent` du firmware Momentum utilisé.
+- Si le firmware change la structure (ex: ajout de champs), les stubs devront être mis à jour.
 
 ## Pré-requis matériel & logiciel
 
@@ -42,52 +64,3 @@ Commandes les plus utiles (format 10 bytes hex) :
 - Eco OFF       : `00 D4 00 03 00 00 00 00 00 00`
 - Ouvrir trappe batterie : `00 D4 00 04 00 00 00 00 00 00`
 - Mode transport ON  : `00 D2 1B 1E 3C 01 00 00 01 00` (exemple connu)
-
-## Plan de développement (étapes recommandées)
-
-1. **Préparation de l'environnement**
-   - Installer uFBT → https://github.com/flipperdevices/flipperzero-ufbt
-   - Cloner un template d'application BLE existante (ex: BLE Spam, ou un PoC GATT client)
-   - Activer full BLE stack dans le firmware choisi
-
-2. **Structure de l'application**
-aike_agent/ ├── application.fam ├── aike_agent.c ├── aike_agent.h ├── views/ │   ├── main_menu.c │   ├── scan_view.c │   ├── auth_view.c │   ├── control_view.c └── assets/ (icônes, etc.)
-3. **Étapes techniques clés à implémenter**
-
-| Étape                              | Difficulté | Priorité | Notes / pièges possibles                              |
-|------------------------------------|------------|----------|-------------------------------------------------------|
-| Scan + filtre nom "AIKE*"          | ★☆☆        | ★★★★★    | Utiliser gap scan avec filtre sur adv data            |
-| Connexion GATT                     | ★★☆        | ★★★★★    | gap_connect → attendre status connected               |
-| Découverte services/characteristics| ★★☆        | ★★★★     | gatt_client_discover_primary_services                 |
-| Lire challenge (UUID 2556)         | ★★☆        | ★★★★★    | gatt_client_read_value_handle                         |
-| Calcul SHA1                        | ★★★        | ★★★★★    | Porter une implémentation SHA1 légère (~5-10kB)       |
-| Écrire response (UUID 2557)        | ★★☆        | ★★★★★    | gatt_client_write_value_handle                        |
-| Écrire commandes (UUID 155f)       | ★☆☆        | ★★★★     | Format fixe 10 bytes                                  |
-| Notifications (optionnel)          | ★★★        | ★★☆      | gatt_client_subscribe + callback                      |
-| Interface menu (Sub-GHz style)     | ★★☆        | ★★★      | Utiliser view dispatcher + menu / dialog              |
-| Gestion des erreurs / timeout      | ★★★        | ★★★      | Très important sur le BLE du Flipper                  |
-
-4. **Ordre de développement recommandé (MVP rapide)**
-
-1. Scan + connexion + nom affiché
-2. Authentification (challenge → SHA1 → response)
-3. Bouton "Unlock" qui envoie la commande
-4. Ajouter Lock / Eco
-5. (Bonus) Afficher notifications batterie/lock
-
-## Ressources utiles
-
-- uFBT docs : https://github.com/flipperdevices/flipperzero-ufbt
-- Exemples BLE dans firmware officiel : `/applications/plugins/ble*`
-- Implémentations SHA1 légères :
-- https://github.com/983/SHA1 (très petite)
-- https://github.com/openssl/openssl (trop grosse → à découper)
-- Discord Flipper Zero (canal #development ou #plugins)
-- Forum : https://forum.flipper.net
-- GitHub search : "flipper zero ble gatt client"
-
-**Avertissement légal**  
-Utiliser uniquement sur ton propre scooter.  
-L'exploitation de cette faille sur un véhicule qui ne t'appartient pas peut être considérée comme une infraction pénale selon la législation de ton pays.
-
-Bonne chance et bon dev ! 🛴🔧
