@@ -1,0 +1,11 @@
+App(
+    appid="aike_agent",
+    name="Aike Agent",
+    apptype=FlipperAppType.EXTERNAL,
+    entry_point="aike_agent_app",
+    requires=["gui"],
+    stack_size=2 * 1024,
+    fap_icon="assets/aike_agent_10px.png",
+    fap_category="Bluetooth",
+    fap_icon_assets="assets",
+)
