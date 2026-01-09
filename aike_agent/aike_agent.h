@@ -31,6 +31,7 @@ typedef struct {
     
     AikeAgentView current_view;
     GapSvcEventHandler* ble_event_handler;
+    uint16_t connection_handle;
 } AikeAgentApp;
 
 #endif
