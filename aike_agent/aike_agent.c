@@ -10,6 +10,68 @@
 // or we use forward declarations if needed.
 #include <furi_hal_bt.h>
 
+// =============================================================================
+// ACI Implementation (Missing Symbols Fix)
+// =============================================================================
+// These functions are not exported by the firmware (or not linked), so we
+// implement them using the exported hci_send_req function.
+
+struct hci_request {
+    uint16_t ogf;
+    uint16_t ocf;
+    int event;
+    void* cparam;
+    int clen;
+    void* rparam;
+    int rlen;
+};
+
+extern int hci_send_req(struct hci_request* req, uint8_t async);
+
+tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_duplicates) {
+    struct __attribute__((packed)) {
+        uint16_t scan_interval;
+        uint16_t scan_window;
+        uint8_t own_addr_type;
+        uint8_t filter_duplicates;
+    } params = {
+        .scan_interval = scan_interval,
+        .scan_window = scan_window,
+        .own_addr_type = own_address_type,
+        .filter_duplicates = filter_duplicates
+    };
+
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x3F,
+        .ocf = 0x82,
+        .event = 0x0E, // Command Complete
+        .cparam = &params,
+        .clen = sizeof(params),
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
+}
+
+tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code) {
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x3F,
+        .ocf = 0x83,
+        .event = 0x0E,
+        .cparam = &procedure_code,
+        .clen = 1,
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
+}
+
 #define TAG "AikeAgent"
 
 // Master Key: 20x 0xFF

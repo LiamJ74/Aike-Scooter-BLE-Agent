@@ -4,12 +4,81 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Shadow Types to avoid conflict with system headers while allowing structure access
-// We use "AikeGap" prefix.
+// ==========================================
+// HCI / ACI Definitions for Flipper Zero (STM32WB)
+// ==========================================
+
+// Basic Types
+typedef uint8_t tBleStatus;
+typedef void GapSvcEventHandler;
+
+// HCI Packet Types
+#define HCI_EVENT_PKT_TYPE 0x04
+
+// HCI Event Codes
+#define HCI_LE_META_EVENT 0x3E
+
+// LE Subevents
+#define HCI_LE_ADVERTISING_REPORT_EVENT 0x02
+
+// ACI/GAP Constants
+#define OWN_ADDRESS_PUBLIC 0x00
+#define DUPLICATE_FILTER_ENABLED 0x01
+#define GAP_GENERAL_DISCOVERY_PROC 0x02
+
+// Structs (Packed to match wire format)
+
+typedef struct __attribute__((packed)) {
+    uint8_t type;
+    uint8_t data[];
+} hci_uart_pckt;
+
+typedef struct __attribute__((packed)) {
+    uint8_t evt;
+    uint8_t plen;
+    uint8_t data[];
+} hci_event_pckt;
+
+typedef struct __attribute__((packed)) {
+    uint8_t subevent;
+    uint8_t data[];
+} evt_le_meta_event;
+
+typedef struct __attribute__((packed)) {
+    uint8_t num_reports;
+    uint8_t event_type;   // 1 byte (Offset 0)
+    uint8_t address_type; // 1 byte (Offset 1)
+    uint8_t address[6];   // 6 bytes (Offset 2)
+    uint8_t data_length;  // 1 byte (Offset 8)
+    uint8_t data[];       // Variable length
+} hci_le_advertising_report_event_rp0;
+
+// Ble Event Ack Status
+typedef enum {
+    BleEventNotAck,
+    BleEventAck,
+    BleEventAckFlowEnable,
+} BleEventAckStatus;
+
+// Function Prototypes for Hooks and ACI
+
+// Registers a low-level HCI event handler
+void* ble_event_dispatcher_register_svc_handler(BleEventAckStatus (*handler)(void* event, void* context), void* context);
+
+// Unregisters the handler
+void ble_event_dispatcher_unregister_svc_handler(void* handler);
+
+// ACI GAP Functions
+tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_duplicates);
+
+tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code);
+
+// ==========================================
+// Legacy Stubs (kept for compatibility if needed)
+// ==========================================
 
 typedef enum {
     AikeGapEventTypeAdvReport = 0,
-    // Add other events if needed mapping
 } AikeGapEventType;
 
 typedef struct {
@@ -26,35 +95,5 @@ typedef struct {
     AikeGapEventType type;
     AikeGapEventData data;
 } AikeGapEvent;
-
-typedef struct {
-    uint8_t addr[6];
-    uint8_t type;
-} AikeBdAddr;
-
-#ifndef BLE_SCAN_ACTIVE
-#define BLE_SCAN_ACTIVE 1
-#endif
-
-#ifndef BLE_SCAN_INTERVAL_DEFAULT
-#define BLE_SCAN_INTERVAL_DEFAULT 0x0060
-#endif
-
-#ifndef BLE_SCAN_WINDOW_DEFAULT
-#define BLE_SCAN_WINDOW_DEFAULT 0x0030
-#endif
-
-// Custom prototypes that take void* to bypass strict type checking
-// This assumes the calling convention matches (which it does for pointers and simple structs usually)
-// The actual functions in the binary will take standard GapEvent types.
-// We just need to trick the compiler.
-
-void ble_gap_scan_start(uint8_t mode, uint16_t interval, uint16_t window, void* callback, void* context);
-void ble_gap_scan_stop();
-void ble_gap_connect(const void* peer_addr);
-
-// GATT Client stubs
-void ble_gatt_client_read_value(uint16_t conn_handle, uint16_t handle);
-void ble_gatt_client_write_value(uint16_t conn_handle, uint16_t handle, const uint8_t* data, uint16_t len);
 
 #endif
