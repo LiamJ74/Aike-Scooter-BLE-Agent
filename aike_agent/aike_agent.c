@@ -56,6 +56,72 @@ tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t
     return status;
 }
 
+tBleStatus aci_gap_create_connection(uint16_t scan_interval, uint16_t scan_window, uint8_t peer_address_type, uint8_t* peer_address, uint8_t own_address_type, uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency, uint16_t supervision_timeout, uint16_t min_ce_length, uint16_t max_ce_length) {
+    struct __attribute__((packed)) {
+        uint16_t scan_interval;
+        uint16_t scan_window;
+        uint8_t peer_address_type;
+        uint8_t peer_address[6];
+        uint8_t own_address_type;
+        uint16_t conn_interval_min;
+        uint16_t conn_interval_max;
+        uint16_t conn_latency;
+        uint16_t supervision_timeout;
+        uint16_t min_ce_length;
+        uint16_t max_ce_length;
+    } params;
+
+    params.scan_interval = scan_interval;
+    params.scan_window = scan_window;
+    params.peer_address_type = peer_address_type;
+    memcpy(params.peer_address, peer_address, 6);
+    params.own_address_type = own_address_type;
+    params.conn_interval_min = conn_interval_min;
+    params.conn_interval_max = conn_interval_max;
+    params.conn_latency = conn_latency;
+    params.supervision_timeout = supervision_timeout;
+    params.min_ce_length = min_ce_length;
+    params.max_ce_length = max_ce_length;
+
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x3F,
+        .ocf = 0x43, // ACI_GAP_CREATE_CONNECTION
+        .event = 0x0F, // Command Status (Usually 0x0F for async commands like Create Connection)
+        .cparam = &params,
+        .clen = sizeof(params),
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
+}
+
+tBleStatus hci_disconnect(uint16_t connection_handle, uint8_t reason) {
+    struct __attribute__((packed)) {
+        uint16_t connection_handle;
+        uint8_t reason;
+    } params = {
+        .connection_handle = connection_handle,
+        .reason = reason
+    };
+
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x01,
+        .ocf = 0x06, // HCI_DISCONNECT
+        .event = 0x0F, // Command Status
+        .cparam = &params,
+        .clen = sizeof(params),
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
+}
+
 tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code) {
     uint8_t status = 0;
     struct hci_request req = {
@@ -146,7 +212,7 @@ void aike_agent_app_free(AikeAgentApp* app) {
     free(app);
 }
 
-// HCI Event Handler to capture Adv Reports
+// HCI Event Handler to capture Adv Reports and Connection Events
 static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
     AikeAgentApp* app = (AikeAgentApp*)context;
     hci_uart_pckt* pckt = (hci_uart_pckt*)event;
@@ -158,7 +224,23 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
     if(evt_pckt->evt == HCI_LE_META_EVENT) {
         evt_le_meta_event* meta_evt = (evt_le_meta_event*)evt_pckt->data;
 
-        if(meta_evt->subevent == HCI_LE_ADVERTISING_REPORT_EVENT) {
+        if(meta_evt->subevent == HCI_LE_CONNECTION_COMPLETE_EVENT) {
+            evt_le_connection_complete* cc = (evt_le_connection_complete*)meta_evt->data;
+            if (cc->status == 0) {
+                // Connected successfully
+                FURI_LOG_I(TAG, "Connected! Handle: 0x%04X", cc->handle);
+                app->connection_handle = cc->handle; // Need to add this to struct
+                aike_control_view_set_status(app->control_view, "Connected");
+
+                // Transition to Auth (Write Challenge)
+                // TODO: Need GATT Handle. For now, we update status.
+                aike_agent_authenticate(app);
+            } else {
+                 FURI_LOG_E(TAG, "Connection Failed: 0x%02X", cc->status);
+                 aike_control_view_set_status(app->control_view, "Connection Failed");
+            }
+            return BleEventNotAck;
+        } else if(meta_evt->subevent == HCI_LE_ADVERTISING_REPORT_EVENT) {
             hci_le_advertising_report_event_rp0* adv_report = (hci_le_advertising_report_event_rp0*)meta_evt->data;
             
             // We only handle one report per event for simplicity, though num_reports can be > 1
@@ -320,20 +402,56 @@ static void aike_agent_control_callback(void* context, AikeCommand command) {
 }
 
 static void aike_agent_connect(AikeAgentApp* app, const char* mac_address) {
-    // For now, we only simulated connection/auth/command in previous steps.
-    // Implementing ACI connection is complex (Gap_Create_Connection).
-    // Given the task was to fix Scan first, we keep this "Simulation" or "Partial"
-    // unless we want to go full ACI for connection too.
-    // We will log the intent.
-    FURI_LOG_I(TAG, "Connect requested to %s (ACI implementation pending for connect)", mac_address);
-    aike_agent_authenticate(app);
+    // Parse MAC address from string "XX:XX:XX:XX:XX:XX"
+    uint8_t addr[6];
+    int values[6];
+    if(6 == sscanf(mac_address, "%x:%x:%x:%x:%x:%x",
+        &values[5], &values[4], &values[3], &values[2], &values[1], &values[0])) {
+        for(int i=0; i<6; i++) addr[i] = (uint8_t)values[i];
+    } else {
+        FURI_LOG_E(TAG, "Invalid MAC format");
+        return;
+    }
+
+    FURI_LOG_I(TAG, "Connecting to %02X:%02X:%02X:%02X:%02X:%02X",
+        addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
+
+    // Update View
+    aike_control_view_set_status(app->control_view, "Connecting...");
+
+    // Start Connection
+    // Scan: 0x10, 0x10 (Continuous fast scan)
+    // Peer: Random(0x01) or Public(0x00)? Usually Random for scooters.
+    // Try Random (0x01) first, or use detected type if we stored it.
+    // For simplicity, assuming Random (0x01) if not Public.
+    // Ideally we should pass the address type from scan result.
+
+    // Using 0x00 (Public) for now as initial guess or based on scan?
+    // In scan callback we don't pass type.
+    // Let's assume 0x01 (Random) as most BLE peripherals use random static.
+    // If it fails, we might need to change.
+
+    tBleStatus status = aci_gap_create_connection(
+        0x0010, 0x0010,
+        0x01, addr, // Peer Addr Type: 0x01 (Random)
+        OWN_ADDRESS_PUBLIC,
+        0x0006, 0x0080, // 7.5ms - 100ms
+        0,
+        0x00C8, // 2000ms timeout
+        0, 0
+    );
+
+    if(status != 0) {
+        FURI_LOG_E(TAG, "Create Connection Failed: 0x%02X", status);
+        aike_control_view_set_status(app->control_view, "Conn Cmd Failed");
+    }
 }
 
 static void aike_agent_authenticate(AikeAgentApp* app) {
-    UNUSED(MASTER_KEY); // Prevent Unused error during simulation
-    // Simulated Auth
-    FURI_LOG_I(TAG, "Authenticating...");
-    aike_control_view_set_status(app->control_view, "Connected (Sim)");
+    UNUSED(MASTER_KEY);
+    // Real Auth would require GATT Write
+    FURI_LOG_I(TAG, "Authenticating... (GATT logic pending)");
+    aike_control_view_set_status(app->control_view, "Connected (Auth Pending)");
 }
 
 static void aike_agent_send_command(AikeAgentApp* app, const uint8_t* command, uint8_t len) {

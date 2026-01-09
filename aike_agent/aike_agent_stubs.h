@@ -19,6 +19,7 @@ typedef void GapSvcEventHandler;
 #define HCI_LE_META_EVENT 0x3E
 
 // LE Subevents
+#define HCI_LE_CONNECTION_COMPLETE_EVENT 0x01
 #define HCI_LE_ADVERTISING_REPORT_EVENT 0x02
 
 // ACI/GAP Constants
@@ -53,6 +54,18 @@ typedef struct __attribute__((packed)) {
     uint8_t data[];       // Variable length
 } hci_le_advertising_report_event_rp0;
 
+typedef struct __attribute__((packed)) {
+    uint8_t status;
+    uint16_t handle;
+    uint8_t role;
+    uint8_t peer_addr_type;
+    uint8_t peer_addr[6];
+    uint16_t interval;
+    uint16_t latency;
+    uint16_t supervision_timeout;
+    uint8_t master_clock_accuracy;
+} evt_le_connection_complete;
+
 // Ble Event Ack Status
 typedef enum {
     BleEventNotAck,
@@ -72,6 +85,10 @@ void ble_event_dispatcher_unregister_svc_handler(void* handler);
 tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_duplicates);
 
 tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code);
+
+tBleStatus aci_gap_create_connection(uint16_t scan_interval, uint16_t scan_window, uint8_t peer_address_type, uint8_t* peer_address, uint8_t own_address_type, uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency, uint16_t supervision_timeout, uint16_t min_ce_length, uint16_t max_ce_length);
+
+tBleStatus hci_disconnect(uint16_t connection_handle, uint8_t reason);
 
 // ==========================================
 // Legacy Stubs (kept for compatibility if needed)
