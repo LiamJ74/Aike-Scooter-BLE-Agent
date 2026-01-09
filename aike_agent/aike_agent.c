@@ -4,139 +4,7 @@
 #include <furi.h>
 #include <gui/gui.h>
 #include <gui/view_dispatcher.h>
-#include <furi_hal.h>
-
-// If furi_hal_bt.h is not found locally, we assume it's available in the build environment
-// or we use forward declarations if needed.
 #include <furi_hal_bt.h>
-
-// =============================================================================
-// ACI Implementation (Missing Symbols Fix)
-// =============================================================================
-// These functions are not exported by the firmware (or not linked), so we
-// implement them using the exported hci_send_req function.
-
-struct hci_request {
-    uint16_t ogf;
-    uint16_t ocf;
-    int event;
-    void* cparam;
-    int clen;
-    void* rparam;
-    int rlen;
-};
-
-extern int hci_send_req(struct hci_request* req, uint8_t async);
-
-tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_duplicates) {
-    struct __attribute__((packed)) {
-        uint16_t scan_interval;
-        uint16_t scan_window;
-        uint8_t own_addr_type;
-        uint8_t filter_duplicates;
-    } params = {
-        .scan_interval = scan_interval,
-        .scan_window = scan_window,
-        .own_addr_type = own_address_type,
-        .filter_duplicates = filter_duplicates
-    };
-
-    uint8_t status = 0;
-    struct hci_request req = {
-        .ogf = 0x3F,
-        .ocf = 0x82,
-        .event = 0x0E, // Command Complete
-        .cparam = &params,
-        .clen = sizeof(params),
-        .rparam = &status,
-        .rlen = 1
-    };
-
-    if(hci_send_req(&req, 0) < 0) return 0xFF;
-    return status;
-}
-
-tBleStatus aci_gap_create_connection(uint16_t scan_interval, uint16_t scan_window, uint8_t peer_address_type, uint8_t* peer_address, uint8_t own_address_type, uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency, uint16_t supervision_timeout, uint16_t min_ce_length, uint16_t max_ce_length) {
-    struct __attribute__((packed)) {
-        uint16_t scan_interval;
-        uint16_t scan_window;
-        uint8_t peer_address_type;
-        uint8_t peer_address[6];
-        uint8_t own_address_type;
-        uint16_t conn_interval_min;
-        uint16_t conn_interval_max;
-        uint16_t conn_latency;
-        uint16_t supervision_timeout;
-        uint16_t min_ce_length;
-        uint16_t max_ce_length;
-    } params;
-
-    params.scan_interval = scan_interval;
-    params.scan_window = scan_window;
-    params.peer_address_type = peer_address_type;
-    memcpy(params.peer_address, peer_address, 6);
-    params.own_address_type = own_address_type;
-    params.conn_interval_min = conn_interval_min;
-    params.conn_interval_max = conn_interval_max;
-    params.conn_latency = conn_latency;
-    params.supervision_timeout = supervision_timeout;
-    params.min_ce_length = min_ce_length;
-    params.max_ce_length = max_ce_length;
-
-    uint8_t status = 0;
-    struct hci_request req = {
-        .ogf = 0x3F,
-        .ocf = 0x43, // ACI_GAP_CREATE_CONNECTION
-        .event = 0x0F, // Command Status (Usually 0x0F for async commands like Create Connection)
-        .cparam = &params,
-        .clen = sizeof(params),
-        .rparam = &status,
-        .rlen = 1
-    };
-
-    if(hci_send_req(&req, 0) < 0) return 0xFF;
-    return status;
-}
-
-tBleStatus hci_disconnect(uint16_t connection_handle, uint8_t reason) {
-    struct __attribute__((packed)) {
-        uint16_t connection_handle;
-        uint8_t reason;
-    } params = {
-        .connection_handle = connection_handle,
-        .reason = reason
-    };
-
-    uint8_t status = 0;
-    struct hci_request req = {
-        .ogf = 0x01,
-        .ocf = 0x06, // HCI_DISCONNECT
-        .event = 0x0F, // Command Status
-        .cparam = &params,
-        .clen = sizeof(params),
-        .rparam = &status,
-        .rlen = 1
-    };
-
-    if(hci_send_req(&req, 0) < 0) return 0xFF;
-    return status;
-}
-
-tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code) {
-    uint8_t status = 0;
-    struct hci_request req = {
-        .ogf = 0x3F,
-        .ocf = 0x83,
-        .event = 0x0E,
-        .cparam = &procedure_code,
-        .clen = 1,
-        .rparam = &status,
-        .rlen = 1
-    };
-
-    if(hci_send_req(&req, 0) < 0) return 0xFF;
-    return status;
-}
 
 #define TAG "AikeAgent"
 
@@ -162,6 +30,42 @@ static bool aike_agent_view_dispatcher_navigation_event_callback(void* context);
 
 // HCI Event Handler
 static BleEventAckStatus aike_hci_event_handler(void* event, void* context);
+
+// =============================================================================
+// ACI Implementation Stubs
+// =============================================================================
+// The low-level HCI functions (aci_gap_start_general_discovery_proc, etc.)
+// require 'hci_send_req', which is DISABLED in standard Flipper firmware.
+// Calling them causes "MissingImports" error at runtime.
+// We stub them out here to allow the app to launch, but BLE functionality
+// will be limited unless run on a firmware with enabled HCI API.
+
+tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_duplicates) {
+    UNUSED(scan_interval); UNUSED(scan_window);
+    UNUSED(own_address_type); UNUSED(filter_duplicates);
+    FURI_LOG_W(TAG, "Scan requested but HCI API is disabled on this firmware.");
+    return 0xFF; // Not Supported
+}
+
+tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code) {
+    UNUSED(procedure_code);
+    return 0xFF;
+}
+
+tBleStatus aci_gap_create_connection(uint16_t scan_interval, uint16_t scan_window, uint8_t peer_address_type, uint8_t* peer_address, uint8_t own_address_type, uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency, uint16_t supervision_timeout, uint16_t min_ce_length, uint16_t max_ce_length) {
+    UNUSED(scan_interval); UNUSED(scan_window); UNUSED(peer_address_type);
+    UNUSED(peer_address); UNUSED(own_address_type); UNUSED(conn_interval_min);
+    UNUSED(conn_interval_max); UNUSED(conn_latency); UNUSED(supervision_timeout);
+    UNUSED(min_ce_length); UNUSED(max_ce_length);
+    FURI_LOG_W(TAG, "Connect requested but HCI API is disabled on this firmware.");
+    return 0xFF;
+}
+
+tBleStatus hci_disconnect(uint16_t connection_handle, uint8_t reason) {
+    UNUSED(connection_handle); UNUSED(reason);
+    return 0xFF;
+}
+
 
 AikeAgentApp* aike_agent_app_alloc() {
     AikeAgentApp* app = malloc(sizeof(AikeAgentApp));
@@ -191,6 +95,8 @@ AikeAgentApp* aike_agent_app_alloc() {
     // Initial view
     view_dispatcher_switch_to_view(app->view_dispatcher, AikeAgentViewScan);
     app->current_view = AikeAgentViewScan;
+
+    // Attempt scan start (will log warning if API disabled)
     aike_agent_start_scan(app);
 
     return app;
@@ -214,6 +120,8 @@ void aike_agent_app_free(AikeAgentApp* app) {
 
 // HCI Event Handler to capture Adv Reports and Connection Events
 static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
+    // With HCI Send disabled, we likely won't receive events either,
+    // but this code is safe to keep as it uses standard types.
     AikeAgentApp* app = (AikeAgentApp*)context;
     hci_uart_pckt* pckt = (hci_uart_pckt*)event;
 
@@ -229,11 +137,9 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
             if (cc->status == 0) {
                 // Connected successfully
                 FURI_LOG_I(TAG, "Connected! Handle: 0x%04X", cc->handle);
-                app->connection_handle = cc->handle; // Need to add this to struct
+                app->connection_handle = cc->handle;
                 aike_control_view_set_status(app->control_view, "Connected");
 
-                // Transition to Auth (Write Challenge)
-                // TODO: Need GATT Handle. For now, we update status.
                 aike_agent_authenticate(app);
             } else {
                  FURI_LOG_E(TAG, "Connection Failed: 0x%02X", cc->status);
@@ -243,7 +149,6 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
         } else if(meta_evt->subevent == HCI_LE_ADVERTISING_REPORT_EVENT) {
             hci_le_advertising_report_event_rp0* adv_report = (hci_le_advertising_report_event_rp0*)meta_evt->data;
             
-            // We only handle one report per event for simplicity, though num_reports can be > 1
             if (adv_report->num_reports > 0) {
                 uint8_t* adv_data = adv_report->data;
                 uint8_t adv_data_len = adv_report->data_length;
@@ -280,7 +185,7 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
                     snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
                              adv_report->address[5], adv_report->address[4],
                              adv_report->address[3], adv_report->address[2],
-                             adv_report->address[1], adv_report->address[0]); // Reverse order usually for LE
+                             adv_report->address[1], adv_report->address[0]);
 
                     furi_mutex_acquire(app->mutex, FuriWaitForever);
 
@@ -303,8 +208,6 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
                     furi_mutex_release(app->mutex);
                 }
             }
-            // Return AckFlowEnable to let other handlers process it too if needed, 
-            // but usually we are just observing.
             return BleEventNotAck;
         }
     }
@@ -323,17 +226,8 @@ static void aike_agent_start_scan(AikeAgentApp* app) {
         app->ble_event_handler = ble_event_dispatcher_register_svc_handler(aike_hci_event_handler, app);
     }
 
-    // Start General Discovery Procedure via ACI
-    // Interval: 0x10 * 0.625ms = 10ms, Window: 0x10 * 0.625ms = 10ms (Continuous)
-    // Own Address: Public (0x00)
-    // Filter Duplicates: Enabled (0x01)
-    tBleStatus status = aci_gap_start_general_discovery_proc(0x40, 0x30, OWN_ADDRESS_PUBLIC, DUPLICATE_FILTER_ENABLED);
-    
-    if (status != 0) {
-        FURI_LOG_E(TAG, "Failed to start scan: 0x%02X", status);
-    } else {
-        FURI_LOG_I(TAG, "Scan started via ACI");
-    }
+    // Attempt to start scan using stubbed function
+    aci_gap_start_general_discovery_proc(0x40, 0x30, OWN_ADDRESS_PUBLIC, DUPLICATE_FILTER_ENABLED);
 }
 
 static void aike_agent_stop_scan(AikeAgentApp* app) {
@@ -342,7 +236,6 @@ static void aike_agent_stop_scan(AikeAgentApp* app) {
         app->ble_event_handler = NULL;
     }
 
-    // Terminate GAP Procedure (0x02 = General Discovery)
     aci_gap_terminate_gap_proc(GAP_GENERAL_DISCOVERY_PROC);
 }
 
@@ -393,6 +286,7 @@ static void aike_agent_control_callback(void* context, AikeCommand command) {
             aike_agent_send_command(app, cmd_buffer, 10);
             break;
         case AikeCommandDisconnect:
+            hci_disconnect(app->connection_handle, 0x13); // Remote User Terminated
             view_dispatcher_switch_to_view(app->view_dispatcher, AikeAgentViewScan);
             app->current_view = AikeAgentViewScan;
             aike_agent_start_scan(app);
@@ -402,7 +296,7 @@ static void aike_agent_control_callback(void* context, AikeCommand command) {
 }
 
 static void aike_agent_connect(AikeAgentApp* app, const char* mac_address) {
-    // Parse MAC address from string "XX:XX:XX:XX:XX:XX"
+    // Parse MAC address
     uint8_t addr[6];
     int values[6];
     if(6 == sscanf(mac_address, "%x:%x:%x:%x:%x:%x",
@@ -416,47 +310,24 @@ static void aike_agent_connect(AikeAgentApp* app, const char* mac_address) {
     FURI_LOG_I(TAG, "Connecting to %02X:%02X:%02X:%02X:%02X:%02X",
         addr[5], addr[4], addr[3], addr[2], addr[1], addr[0]);
 
-    // Update View
     aike_control_view_set_status(app->control_view, "Connecting...");
 
-    // Start Connection
-    // Scan: 0x10, 0x10 (Continuous fast scan)
-    // Peer: Random(0x01) or Public(0x00)? Usually Random for scooters.
-    // Try Random (0x01) first, or use detected type if we stored it.
-    // For simplicity, assuming Random (0x01) if not Public.
-    // Ideally we should pass the address type from scan result.
-
-    // Using 0x00 (Public) for now as initial guess or based on scan?
-    // In scan callback we don't pass type.
-    // Let's assume 0x01 (Random) as most BLE peripherals use random static.
-    // If it fails, we might need to change.
-
-    tBleStatus status = aci_gap_create_connection(
-        0x0010, 0x0010,
-        0x01, addr, // Peer Addr Type: 0x01 (Random)
-        OWN_ADDRESS_PUBLIC,
-        0x0006, 0x0080, // 7.5ms - 100ms
-        0,
-        0x00C8, // 2000ms timeout
-        0, 0
+    // Stubbed connection call
+    aci_gap_create_connection(
+        0x0010, 0x0010, 0x01, addr, OWN_ADDRESS_PUBLIC,
+        0x0006, 0x0080, 0, 0x00C8, 0, 0
     );
-
-    if(status != 0) {
-        FURI_LOG_E(TAG, "Create Connection Failed: 0x%02X", status);
-        aike_control_view_set_status(app->control_view, "Conn Cmd Failed");
-    }
 }
 
 static void aike_agent_authenticate(AikeAgentApp* app) {
     UNUSED(MASTER_KEY);
-    // Real Auth would require GATT Write
     FURI_LOG_I(TAG, "Authenticating... (GATT logic pending)");
     aike_control_view_set_status(app->control_view, "Connected (Auth Pending)");
 }
 
 static void aike_agent_send_command(AikeAgentApp* app, const uint8_t* command, uint8_t len) {
     UNUSED(app); UNUSED(command); UNUSED(len);
-    FURI_LOG_I(TAG, "Command sent");
+    FURI_LOG_I(TAG, "Command sent (Simulated)");
 }
 
 static bool aike_agent_view_dispatcher_custom_event_callback(void* context, uint32_t event) {

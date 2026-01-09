@@ -2,19 +2,20 @@
 
 This application allows you to scan for and control Äike e-scooters using Bluetooth Low Energy (BLE).
 
-## ⚠️ IMPORTANT: Custom Firmware Required
+## ⚠️ IMPORTANT: Platform Limitation
 
-This application requires a Flipper Zero custom firmware that exposes the full BLE Central/GATT Client API (GAP/GATT headers).
-It has been designed for and tested on:
-- **Momentum Firmware** (Recommended)
-- **RogueMaster Firmware**
-- **Xtreme Firmware** (or Unleashed)
+**Functionality Warning:**
+The Scanning and Connection features of this application rely on **BLE Central / GATT Client** roles.
+Currently, the standard Flipper Zero firmware (including official and most custom builds like Momentum/Unleashed) **does not expose** the necessary APIs (`ble_client`, `scan`, `connect`) to user-space applications.
 
-**It will NOT compile or run on the official Flipper Zero firmware** because the official SDK does not expose the necessary BLE `gap.h` and `ble_app.h` interfaces for third-party applications to act as a BLE Central device.
+As a result:
+- The application will **compile and launch** safely.
+- **Scanning will fail gracefully** (stubbed), logging a warning that the API is disabled.
+- To make this fully functional, you must build the firmware yourself enabling `hci_send_req` or wait for an SDK update that exposes a `ble_central` API.
 
 ## Features
 
-- **Scan**: Auto-detects scooters named "AIKE*".
+- **Scan**: Auto-detects scooters named "AIKE*" (Stubbed - requires custom FW with HCI enabled).
 - **Control**:
   - Unlock / Lock
   - Eco Mode (ON/OFF)
@@ -24,7 +25,6 @@ It has been designed for and tested on:
 ## Installation & Compilation
 
 ### Prerequisites
-- A Flipper Zero running **Momentum Firmware** (or compatible custom FW).
 - `ufbt` (uFlipper Build Tool) installed on your computer.
 - Python 3.
 
@@ -41,13 +41,11 @@ It has been designed for and tested on:
    cd <repo_directory>
    ```
 
-3. **Update SDK for Custom Firmware**:
-   Since this app depends on custom firmware headers, you must point `ufbt` to the Momentum SDK (or your specific firmware's SDK).
+3. **Update SDK**:
    ```bash
    # For Momentum Firmware
    ufbt update --index-url=https://up.momentum-fw.dev/firmware/directory.json
    ```
-   *If you are unsure, check the developer documentation of your specific firmware for the correct `ufbt update` command.*
 
 4. **Build and Launch**:
    Connect your Flipper Zero via USB and run:
