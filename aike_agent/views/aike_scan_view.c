@@ -21,11 +21,6 @@ AikeScanView* aike_scan_view_alloc() {
     AikeScanView* instance = malloc(sizeof(AikeScanView));
     instance->submenu = submenu_alloc();
     submenu_set_header(instance->submenu, "Scanning...");
-    // submenu_set_callback replaced by item specific callback in modern SDKs or handled differently
-    // Actually standard Submenu doesn't have a global set_callback, it's per item.
-    // Wait, submenu_alloc returns Submenu*.
-    // Let's check standard API. submenu_add_item takes callback.
-    // We don't need a global callback setter here if we set it per item.
     return instance;
 }
 
@@ -41,8 +36,7 @@ View* aike_scan_view_get_view(AikeScanView* instance) {
 void aike_scan_view_add_item(AikeScanView* instance, const char* name, const char* mac, uint32_t index) {
     UNUSED(mac);
     // Label format: "Name (MAC)"
-    // Note: Flipper Submenu copies the label.
-    // We use the provided index for the callback
+    // Flipper Submenu copies the label.
     submenu_add_item(instance->submenu, name, index, aike_scan_view_submenu_callback, instance);
 }
 
@@ -54,4 +48,8 @@ void aike_scan_view_set_callback(AikeScanView* instance, AikeScanViewCallback ca
 void aike_scan_view_clear(AikeScanView* instance) {
     submenu_reset(instance->submenu);
     submenu_set_header(instance->submenu, "Scanning...");
+}
+
+void aike_scan_view_set_status(AikeScanView* instance, const char* status) {
+    submenu_set_header(instance->submenu, status);
 }

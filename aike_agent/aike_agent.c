@@ -219,8 +219,12 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
 
     hci_event_pckt* evt_pckt = (hci_event_pckt*)pckt->data;
     
+    // LOG EVERY HCI EVENT FOR DEBUG
+    FURI_LOG_I(TAG, "HCI Event Rx: 0x%02X", evt_pckt->evt);
+
     if(evt_pckt->evt == HCI_LE_META_EVENT) {
         evt_le_meta_event* meta_evt = (evt_le_meta_event*)evt_pckt->data;
+        FURI_LOG_I(TAG, "Meta Event: 0x%02X", meta_evt->subevent);
 
         if(meta_evt->subevent == HCI_LE_CONNECTION_COMPLETE_EVENT) {
             evt_le_connection_complete* cc = (evt_le_connection_complete*)meta_evt->data;
@@ -343,13 +347,18 @@ static void aike_agent_start_scan(AikeAgentApp* app) {
     }
 
     // Start Scan (Custom FW should allow this now)
-    tBleStatus status = aci_gap_start_general_discovery_proc(0x40, 0x30, OWN_ADDRESS_PUBLIC, DUPLICATE_FILTER_ENABLED);
+    // DUPLICATE_FILTER_ENABLED (0x01) -> DUPLICATE_FILTER_DISABLE (0x00) for debug
+    tBleStatus status = aci_gap_start_general_discovery_proc(0x40, 0x30, OWN_ADDRESS_PUBLIC, 0x00);
 
+    char status_msg[32];
     if (status != 0) {
-        FURI_LOG_E(TAG, "Start Scan Failed: 0x%02X (Check Firmware Support)", status);
+        snprintf(status_msg, sizeof(status_msg), "Start Error: 0x%02X", status);
+        FURI_LOG_E(TAG, "Start Scan Failed: 0x%02X", status);
     } else {
+        snprintf(status_msg, sizeof(status_msg), "Scanning... (OK)");
         FURI_LOG_I(TAG, "Scan started via HCI");
     }
+    aike_scan_view_set_status(app->scan_view, status_msg);
 }
 
 static void aike_agent_stop_scan(AikeAgentApp* app) {
