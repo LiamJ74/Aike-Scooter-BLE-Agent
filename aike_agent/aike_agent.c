@@ -32,38 +32,130 @@ static bool aike_agent_view_dispatcher_navigation_event_callback(void* context);
 static BleEventAckStatus aike_hci_event_handler(void* event, void* context);
 
 // =============================================================================
-// ACI Implementation Stubs
+// ACI Implementation
 // =============================================================================
-// The low-level HCI functions (aci_gap_start_general_discovery_proc, etc.)
-// require 'hci_send_req', which is DISABLED in standard Flipper firmware.
-// Calling them causes "MissingImports" error at runtime.
-// We stub them out here to allow the app to launch, but BLE functionality
-// will be limited unless run on a firmware with enabled HCI API.
+// Restored for Custom Firmware which enables 'hci_send_req'.
+
+struct hci_request {
+    uint16_t ogf;
+    uint16_t ocf;
+    int event;
+    void* cparam;
+    int clen;
+    void* rparam;
+    int rlen;
+};
+
+extern int hci_send_req(struct hci_request* req, uint8_t async);
 
 tBleStatus aci_gap_start_general_discovery_proc(uint16_t scan_interval, uint16_t scan_window, uint8_t own_address_type, uint8_t filter_duplicates) {
-    UNUSED(scan_interval); UNUSED(scan_window);
-    UNUSED(own_address_type); UNUSED(filter_duplicates);
-    FURI_LOG_W(TAG, "Scan requested but HCI API is disabled on this firmware.");
-    return 0xFF; // Not Supported
+    struct __attribute__((packed)) {
+        uint16_t scan_interval;
+        uint16_t scan_window;
+        uint8_t own_addr_type;
+        uint8_t filter_duplicates;
+    } params = {
+        .scan_interval = scan_interval,
+        .scan_window = scan_window,
+        .own_addr_type = own_address_type,
+        .filter_duplicates = filter_duplicates
+    };
+
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x3F,
+        .ocf = 0x82,
+        .event = 0x0E, // Command Complete
+        .cparam = &params,
+        .clen = sizeof(params),
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
 }
 
 tBleStatus aci_gap_terminate_gap_proc(uint8_t procedure_code) {
-    UNUSED(procedure_code);
-    return 0xFF;
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x3F,
+        .ocf = 0x83,
+        .event = 0x0E,
+        .cparam = &procedure_code,
+        .clen = 1,
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
 }
 
 tBleStatus aci_gap_create_connection(uint16_t scan_interval, uint16_t scan_window, uint8_t peer_address_type, uint8_t* peer_address, uint8_t own_address_type, uint16_t conn_interval_min, uint16_t conn_interval_max, uint16_t conn_latency, uint16_t supervision_timeout, uint16_t min_ce_length, uint16_t max_ce_length) {
-    UNUSED(scan_interval); UNUSED(scan_window); UNUSED(peer_address_type);
-    UNUSED(peer_address); UNUSED(own_address_type); UNUSED(conn_interval_min);
-    UNUSED(conn_interval_max); UNUSED(conn_latency); UNUSED(supervision_timeout);
-    UNUSED(min_ce_length); UNUSED(max_ce_length);
-    FURI_LOG_W(TAG, "Connect requested but HCI API is disabled on this firmware.");
-    return 0xFF;
+    struct __attribute__((packed)) {
+        uint16_t scan_interval;
+        uint16_t scan_window;
+        uint8_t peer_address_type;
+        uint8_t peer_address[6];
+        uint8_t own_address_type;
+        uint16_t conn_interval_min;
+        uint16_t conn_interval_max;
+        uint16_t conn_latency;
+        uint16_t supervision_timeout;
+        uint16_t min_ce_length;
+        uint16_t max_ce_length;
+    } params;
+
+    params.scan_interval = scan_interval;
+    params.scan_window = scan_window;
+    params.peer_address_type = peer_address_type;
+    memcpy(params.peer_address, peer_address, 6);
+    params.own_address_type = own_address_type;
+    params.conn_interval_min = conn_interval_min;
+    params.conn_interval_max = conn_interval_max;
+    params.conn_latency = conn_latency;
+    params.supervision_timeout = supervision_timeout;
+    params.min_ce_length = min_ce_length;
+    params.max_ce_length = max_ce_length;
+
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x3F,
+        .ocf = 0x43, // ACI_GAP_CREATE_CONNECTION
+        .event = 0x0F, // Command Status (Usually 0x0F for async commands like Create Connection)
+        .cparam = &params,
+        .clen = sizeof(params),
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
 }
 
 tBleStatus hci_disconnect(uint16_t connection_handle, uint8_t reason) {
-    UNUSED(connection_handle); UNUSED(reason);
-    return 0xFF;
+    struct __attribute__((packed)) {
+        uint16_t connection_handle;
+        uint8_t reason;
+    } params = {
+        .connection_handle = connection_handle,
+        .reason = reason
+    };
+
+    uint8_t status = 0;
+    struct hci_request req = {
+        .ogf = 0x01,
+        .ocf = 0x06, // HCI_DISCONNECT
+        .event = 0x0F, // Command Status
+        .cparam = &params,
+        .clen = sizeof(params),
+        .rparam = &status,
+        .rlen = 1
+    };
+
+    if(hci_send_req(&req, 0) < 0) return 0xFF;
+    return status;
 }
 
 
@@ -96,7 +188,7 @@ AikeAgentApp* aike_agent_app_alloc() {
     view_dispatcher_switch_to_view(app->view_dispatcher, AikeAgentViewScan);
     app->current_view = AikeAgentViewScan;
 
-    // Attempt scan start (will log warning if API disabled)
+    // Start scanning
     aike_agent_start_scan(app);
 
     return app;
@@ -120,8 +212,6 @@ void aike_agent_app_free(AikeAgentApp* app) {
 
 // HCI Event Handler to capture Adv Reports and Connection Events
 static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
-    // With HCI Send disabled, we likely won't receive events either,
-    // but this code is safe to keep as it uses standard types.
     AikeAgentApp* app = (AikeAgentApp*)context;
     hci_uart_pckt* pckt = (hci_uart_pckt*)event;
 
@@ -155,58 +245,84 @@ static BleEventAckStatus aike_hci_event_handler(void* event, void* context) {
                 
                 uint8_t i = 0;
                 char name[32] = {0};
-                bool found_aike = false;
+                // bool found_aike = false; // We now want ALL devices
 
-                while(i < adv_data_len && i < 31) { // Safety check
+                while(i < adv_data_len && i < 31) {
                     uint8_t len = adv_data[i];
                     if(len == 0) break;
-                    if (i + 1 >= adv_data_len) break; // Overflow protection
+                    if (i + 1 >= adv_data_len) break;
                     
                     uint8_t type = adv_data[i + 1];
 
                     if(type == 0x09 || type == 0x08) { // Complete or Short Local Name
                         uint8_t name_len = len - 1;
                         if(name_len > 31) name_len = 31;
-                        if (i + 2 + name_len > adv_data_len) break; // Overflow protection
+                        if (i + 2 + name_len > adv_data_len) break;
 
                         memcpy(name, &adv_data[i + 2], name_len);
                         name[name_len] = '\0';
 
-                        if(strncmp(name, aike_name_prefix, strlen(aike_name_prefix)) == 0) {
-                            found_aike = true;
-                        }
+                        // if(strncmp(name, aike_name_prefix, strlen(aike_name_prefix)) == 0) {
+                        //     found_aike = true;
+                        // }
                         break;
                     }
                     i += len + 1;
                 }
 
-                if(found_aike) {
-                    char mac_str[18];
-                    snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
-                             adv_report->address[5], adv_report->address[4],
-                             adv_report->address[3], adv_report->address[2],
-                             adv_report->address[1], adv_report->address[0]);
+                // If name is empty, use "Unknown" or just skip? Let's use Unknown.
+                if(strlen(name) == 0) {
+                    snprintf(name, sizeof(name), "Unknown");
+                }
 
-                    furi_mutex_acquire(app->mutex, FuriWaitForever);
+                char mac_str[18];
+                snprintf(mac_str, sizeof(mac_str), "%02X:%02X:%02X:%02X:%02X:%02X",
+                         adv_report->address[5], adv_report->address[4],
+                         adv_report->address[3], adv_report->address[2],
+                         adv_report->address[1], adv_report->address[0]);
 
-                    bool exists = false;
-                    for(int j=0; j<app->device_count; j++) {
-                        if(strcmp(app->device_macs[j], mac_str) == 0) {
-                            exists = true;
-                            break;
+                furi_mutex_acquire(app->mutex, FuriWaitForever);
+
+                bool exists = false;
+                for(int j=0; j<app->device_count; j++) {
+                    if(strcmp(app->device_macs[j], mac_str) == 0) {
+                        exists = true;
+                        // Optionally update name if it was "Unknown" and now we have one
+                        if(strcmp(app->device_names[j], "Unknown") == 0 && strcmp(name, "Unknown") != 0) {
+                             strlcpy(app->device_names[j], name, sizeof(app->device_names[0]));
+                             // Trigger update? Maybe.
+                             view_dispatcher_send_custom_event(app->view_dispatcher, AikeAgentCustomEventUpdateScan);
                         }
+                        break;
                     }
+                }
 
-                    if(!exists && app->device_count < 10) {
+                if(!exists && app->device_count < 10) {
+                    // Sort logic: AIKE to top.
+                    bool is_aike = (strncmp(name, aike_name_prefix, strlen(aike_name_prefix)) == 0);
+
+                    if (is_aike) {
+                        // Shift everyone down
+                        if (app->device_count > 0) {
+                            for(int k=app->device_count; k>0; k--) {
+                                strlcpy(app->device_names[k], app->device_names[k-1], sizeof(app->device_names[0]));
+                                strlcpy(app->device_macs[k], app->device_macs[k-1], sizeof(app->device_macs[0]));
+                            }
+                        }
+                        // Insert at 0
+                        strlcpy(app->device_names[0], name, sizeof(app->device_names[0]));
+                        strlcpy(app->device_macs[0], mac_str, sizeof(app->device_macs[0]));
+                    } else {
+                        // Append at end
                         strlcpy(app->device_names[app->device_count], name, sizeof(app->device_names[0]));
                         strlcpy(app->device_macs[app->device_count], mac_str, sizeof(app->device_macs[0]));
-                        app->device_count++;
-
-                        view_dispatcher_send_custom_event(app->view_dispatcher, AikeAgentCustomEventUpdateScan);
                     }
 
-                    furi_mutex_release(app->mutex);
+                    app->device_count++;
+                    view_dispatcher_send_custom_event(app->view_dispatcher, AikeAgentCustomEventUpdateScan);
                 }
+
+                furi_mutex_release(app->mutex);
             }
             return BleEventNotAck;
         }
@@ -226,8 +342,14 @@ static void aike_agent_start_scan(AikeAgentApp* app) {
         app->ble_event_handler = ble_event_dispatcher_register_svc_handler(aike_hci_event_handler, app);
     }
 
-    // Attempt to start scan using stubbed function
-    aci_gap_start_general_discovery_proc(0x40, 0x30, OWN_ADDRESS_PUBLIC, DUPLICATE_FILTER_ENABLED);
+    // Start Scan (Custom FW should allow this now)
+    tBleStatus status = aci_gap_start_general_discovery_proc(0x40, 0x30, OWN_ADDRESS_PUBLIC, DUPLICATE_FILTER_ENABLED);
+
+    if (status != 0) {
+        FURI_LOG_E(TAG, "Start Scan Failed: 0x%02X (Check Firmware Support)", status);
+    } else {
+        FURI_LOG_I(TAG, "Scan started via HCI");
+    }
 }
 
 static void aike_agent_stop_scan(AikeAgentApp* app) {
@@ -312,11 +434,15 @@ static void aike_agent_connect(AikeAgentApp* app, const char* mac_address) {
 
     aike_control_view_set_status(app->control_view, "Connecting...");
 
-    // Stubbed connection call
-    aci_gap_create_connection(
+    tBleStatus status = aci_gap_create_connection(
         0x0010, 0x0010, 0x01, addr, OWN_ADDRESS_PUBLIC,
         0x0006, 0x0080, 0, 0x00C8, 0, 0
     );
+
+    if (status != 0) {
+        FURI_LOG_E(TAG, "Connect Failed: 0x%02X", status);
+        aike_control_view_set_status(app->control_view, "Cmd Failed");
+    }
 }
 
 static void aike_agent_authenticate(AikeAgentApp* app) {
